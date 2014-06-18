@@ -117,8 +117,33 @@ HRESULT WBPassthruSink::OnStart(LPCWSTR szUrl, IInternetProtocolSink *pOIProtSin
                                 IInternetBindInfo *pOIBindInfo, DWORD grfPI, HANDLE_PTR dwReserved,
                                 IInternetProtocol* pTargetProtocol)
 {
+  m_pTargetProtocol = pTargetProtocol;
+  return _OnStart(szUrl, pOIProtSink, pOIBindInfo, grfPI, dwReserved,
+    [&](){return BaseClass::OnStart(szUrl, pOIProtSink, pOIBindInfo, grfPI, dwReserved, pTargetProtocol);});
+}
+
+HRESULT WBPassthruSink::OnStartEx(IUri* pUri, IInternetProtocolSink *pOIProtSink,
+                  IInternetBindInfo *pOIBindInfo,	DWORD grfPI, HANDLE_PTR dwReserved,
+                  IInternetProtocolEx* pTargetProtocol)
+{
+  CComBSTR sUrl;
+
+  if (FAILED(pUri->GetAbsoluteUri(&sUrl)))
+  {
+    return INET_E_INVALID_URL;
+  }
 
   m_pTargetProtocol = pTargetProtocol;
+
+  return _OnStart(sUrl, pOIProtSink, pOIBindInfo, grfPI, dwReserved,
+    [&](){return BaseClass::OnStartEx(pUri, pOIProtSink, pOIBindInfo, grfPI, dwReserved, pTargetProtocol);});
+}
+
+
+HRESULT WBPassthruSink::_OnStart(LPCWSTR szUrl, IInternetProtocolSink *pOIProtSink,
+                  IInternetBindInfo *pOIBindInfo,	DWORD grfPI, HANDLE_PTR dwReserved,
+                  std::function<HRESULT ()> baseOnStart)
+{
   bool isBlocked = false;
   m_shouldBlock = false;
   m_lastDataReported = false;
@@ -238,7 +263,7 @@ HRESULT WBPassthruSink::OnStart(LPCWSTR szUrl, IInternetProtocolSink *pOIProtSin
     if ((contentType == CFilter::contentTypeImage) && (isBlocked))
     {
       m_shouldBlock = true;
-      BaseClass::OnStart(szUrl, pOIProtSink, pOIBindInfo, grfPI, dwReserved, pTargetProtocol);
+      baseOnStart();
 
       return INET_E_REDIRECT_FAILED;
 
@@ -246,7 +271,7 @@ HRESULT WBPassthruSink::OnStart(LPCWSTR szUrl, IInternetProtocolSink *pOIProtSin
     if (((contentType == CFilter::contentTypeSubdocument))&& (isBlocked)) 
     {
       m_shouldBlock = true;
-      BaseClass::OnStart(szUrl, pOIProtSink, pOIBindInfo, grfPI, dwReserved, pTargetProtocol);
+      baseOnStart();
 
       m_spInternetProtocolSink->ReportProgress(BINDSTATUS_MIMETYPEAVAILABLE, L"text/html");
 
@@ -262,7 +287,7 @@ HRESULT WBPassthruSink::OnStart(LPCWSTR szUrl, IInternetProtocolSink *pOIProtSin
     if (((contentType == CFilter::contentTypeScript))&& (isBlocked)) 
     {
       m_shouldBlock = true;
-      BaseClass::OnStart(szUrl, pOIProtSink, pOIBindInfo, grfPI, dwReserved, pTargetProtocol);
+      baseOnStart();
       m_spInternetProtocolSink->ReportProgress(BINDSTATUS_MIMETYPEAVAILABLE, L"text/javascript");
       m_spInternetProtocolSink->ReportResult(INET_E_REDIRECTING, 301, L"data:");
       return INET_E_REDIRECT_FAILED;
@@ -275,7 +300,7 @@ HRESULT WBPassthruSink::OnStart(LPCWSTR szUrl, IInternetProtocolSink *pOIProtSin
       contentType = GetContentType(mimeType, boundDomain, src);
 */
       m_shouldBlock = true;
-      BaseClass::OnStart(szUrl, pOIProtSink, pOIBindInfo, grfPI, dwReserved, pTargetProtocol);
+      baseOnStart();
       m_spInternetProtocolSink->ReportResult(S_FALSE, 0, L"");
 
       return INET_E_REDIRECT_FAILED;
@@ -283,9 +308,8 @@ HRESULT WBPassthruSink::OnStart(LPCWSTR szUrl, IInternetProtocolSink *pOIProtSin
   }
 #endif // SUPPORT_FILTER
 
-  return isBlocked ? S_FALSE : BaseClass::OnStart(szUrl, pOIProtSink, pOIBindInfo, grfPI, dwReserved, pTargetProtocol);
+  return isBlocked ? S_FALSE : baseOnStart();
 }
-
 
 HRESULT WBPassthruSink::Read(void *pv, ULONG cb, ULONG* pcbRead)
 {
@@ -376,20 +400,6 @@ STDMETHODIMP WBPassthruSink::OnResponse(DWORD dwResponseCode, LPCWSTR szResponse
 STDMETHODIMP WBPassthruSink::ReportProgress(ULONG ulStatusCode, LPCWSTR szStatusText)
 {
   return m_spInternetProtocolSink ? m_spInternetProtocolSink->ReportProgress(ulStatusCode, szStatusText) : S_OK;
-}
-
-
-STDMETHODIMP WBPassthru::Start(LPCWSTR szUrl, IInternetProtocolSink *pOIProtSink,
-    IInternetBindInfo *pOIBindInfo, DWORD grfPI, HANDLE_PTR dwReserved)
-{
-  ATLASSERT(m_spInternetProtocol != 0);
-  if (!m_spInternetProtocol)
-  {
-    return E_UNEXPECTED;
-  }
-
-  return OnStart(szUrl, pOIProtSink, pOIBindInfo, grfPI,
-    dwReserved, m_spInternetProtocol);
 }
 
  STDMETHODIMP WBPassthru::Read(	/* [in, out] */ void *pv,/* [in] */ ULONG cb,/* [out] */ ULONG *pcbRead)

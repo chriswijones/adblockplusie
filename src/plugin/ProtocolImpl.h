@@ -110,11 +110,12 @@ namespace PassthroughAPP
 
   class ATL_NO_VTABLE IInternetProtocolImpl :
     public IPassthroughObject,
-    public IInternetProtocol,
+    public IInternetProtocolEx,
     public IInternetProtocolInfo,
     public IInternetPriority,
     public IInternetThreadSwitch,
-    public IWinInetHttpInfo
+    public IWinInetHttpInfo,
+    public IWinInetCacheHints2
   {
   public:
     void ReleaseAll();
@@ -161,6 +162,14 @@ namespace PassthroughAPP
       /* [in] */ DWORD dwOptions);
 
     STDMETHODIMP UnlockRequest();
+
+    // IInternetProtocolEx
+    STDMETHODIMP StartEx(
+      IUri *pUri,
+      IInternetProtocolSink *pOIProtSink,
+      IInternetBindInfo *pOIBindInfo,
+      DWORD grfPI,
+      HANDLE_PTR dwReserved);
 
     // IInternetProtocolInfo
     STDMETHODIMP ParseUrl(
@@ -221,22 +230,47 @@ namespace PassthroughAPP
       /* [in, out] */ DWORD *pdwFlags,
       /* [in, out] */ DWORD *pdwReserved);
 
+    // IWinInetCacheHints
+    STDMETHODIMP SetCacheExtension(
+      /* [in] */			LPCWSTR pwzExt,
+      /* [in, out] */ LPVOID pszCacheFile,
+      /* [in, out] */ DWORD *pcbCacheFile,
+      /* [in, out] */ DWORD *pdwWinInetError,
+      /* [in, out] */	DWORD *pdwReserved);
+
+    // IWinInetCacheHints2
+    STDMETHODIMP SetCacheExtension2(
+      /* [in] */			LPCWSTR pwzExt,
+      /* [out] */		 WCHAR *pwzCacheFile,
+      /* [in, out] */ DWORD *pcchCacheFile,
+      /* [out] */		 DWORD *pdwWinInetError,
+      /* [out] */		 DWORD *pdwReserved);
+
+
   public:
     CComPtr<IUnknown> m_spInternetProtocolUnk;
     CComPtr<IInternetProtocol> m_spInternetProtocol;
+    CComPtr<IInternetProtocolEx> m_spInternetProtocolEx;
     CComPtr<IInternetProtocolInfo> m_spInternetProtocolInfo;
     CComPtr<IInternetPriority> m_spInternetPriority;
     CComPtr<IInternetThreadSwitch> m_spInternetThreadSwitch;
     CComPtr<IWinInetInfo> m_spWinInetInfo;
     CComPtr<IWinInetHttpInfo> m_spWinInetHttpInfo;
+    CComPtr<IWinInetCacheHints> m_spWinInetCacheHints;
+    CComPtr<IWinInetCacheHints2> m_spWinInetCacheHints2;
   };
 
   class ATL_NO_VTABLE IInternetProtocolSinkImpl :
     public IInternetProtocolSink,
-    public IServiceProvider
+    public IServiceProvider,
+    public IInternetBindInfoEx,
+    public IUriContainer
   {
   public:
     HRESULT OnStart(LPCWSTR szUrl, IInternetProtocolSink *pOIProtSink,
+      IInternetBindInfo *pOIBindInfo, DWORD grfPI, HANDLE_PTR dwReserved,
+      IInternetProtocol* pTargetProtocol);
+    HRESULT OnStartEx(IUri* pUri, IInternetProtocolSink *pOIProtSink,
       IInternetBindInfo *pOIBindInfo, DWORD grfPI, HANDLE_PTR dwReserved,
       IInternetProtocol* pTargetProtocol);
     void ReleaseAll();
@@ -284,9 +318,39 @@ namespace PassthroughAPP
       /* [in] */ REFIID riid,
       /* [out] */ void** ppvObject);
 
+    // IInternetBindInfo
+	  STDMETHODIMP GetBindInfo(
+		  /* [out] */ DWORD *grfBINDF,
+		  /* [in, out] */ BINDINFO *pbindinfo);
+
+	  STDMETHODIMP GetBindString(
+		  /* [in] */ ULONG ulStringType,
+		  /* [in, out] */ LPOLESTR *ppwzStr,
+		  /* [in] */ ULONG cEl,
+		  /* [in, out] */ ULONG *pcElFetched);
+
+	  // IInternetBindInfoEx
+	  STDMETHODIMP GetBindInfoEx(
+		  DWORD *grfBINDF,
+		  BINDINFO *pbindinfo,
+		  DWORD *grfBINDF2,
+		  DWORD *pdwReserved);
+
+	  // IUriContainer
+	  STDMETHODIMP GetIUri(
+		  /* [out] */ IUri **ppIUri);
+
+  protected:
+    HRESULT InitMembers(IInternetProtocolSink *pOIProtSink, IInternetBindInfo *pOIBindInfo,
+		  IInternetProtocol* pTargetProtocol);
+
   public:
     CComPtr<IInternetProtocolSink> m_spInternetProtocolSink;
     CComPtr<IServiceProvider> m_spServiceProvider;
+    CComPtr<IInternetBindInfo> m_spInternetBindInfo;
+	  CComPtr<IInternetBindInfoEx> m_spInternetBindInfoEx;
+	  CComPtr<IUriContainer> m_spUriContainer;
+
     CComPtr<IInternetProtocol> m_spTargetProtocol;
   };
 
@@ -296,19 +360,22 @@ namespace PassthroughAPP
     public IInternetProtocolSinkImpl
   {
   private:
-	static HRESULT WINAPI OnDelegateIID(void* pv, REFIID riid, LPVOID* ppv, DWORD_PTR dw)
-	{
-		IInternetProtocolSink* pSink = ((CInternetProtocolSinkTM<ThreadModel> *) pv)->m_spInternetProtocolSink;
-		ATLASSERT(pSink != 0);
-		return pSink ? pSink->QueryInterface(riid, ppv) : E_UNEXPECTED;
-	}
+	  static HRESULT WINAPI OnDelegateIID(void* pv, REFIID riid, LPVOID* ppv, DWORD_PTR dw)
+	  {
+		  IInternetProtocolSink* pSink = ((CInternetProtocolSinkTM<ThreadModel> *) pv)->m_spInternetProtocolSink;
+		  ATLASSERT(pSink != 0);
+		  return pSink ? pSink->QueryInterface(riid, ppv) : E_UNEXPECTED;
+	  }
 
   public:
     BEGIN_COM_MAP(CInternetProtocolSinkTM)
       COM_INTERFACE_ENTRY(IInternetProtocolSink)
       COM_INTERFACE_ENTRY_PASSTHROUGH(IServiceProvider,
       m_spServiceProvider.p)
-	  COM_INTERFACE_ENTRY_FUNC_BLIND(0, OnDelegateIID)
+      COM_INTERFACE_ENTRY(IInternetBindInfo)
+		  COM_INTERFACE_ENTRY(IInternetBindInfoEx)
+      COM_INTERFACE_ENTRY_PASSTHROUGH(IUriContainer, m_spUriContainer.p)
+	    COM_INTERFACE_ENTRY_FUNC_BLIND(0, OnDelegateIID)
       COM_INTERFACE_ENTRY_PASSTHROUGH_DEBUG()
     END_COM_MAP()
 
@@ -325,6 +392,9 @@ namespace PassthroughAPP
     HRESULT OnStart(LPCWSTR szUrl, IInternetProtocolSink *pOIProtSink,
       IInternetBindInfo *pOIBindInfo, DWORD grfPI, HANDLE_PTR dwReserved,
       IInternetProtocol* pTargetProtocol);
+    HRESULT OnStartEx(IUri* pUri, IInternetProtocolSink *pOIProtSink,
+		  IInternetBindInfo *pOIBindInfo, DWORD grfPI, HANDLE_PTR dwReserved,
+		  IInternetProtocol* pTargetProtocol);
 
     STDMETHODIMP QueryService(REFGUID guidService, REFIID riid, void** ppv);
 
@@ -344,8 +414,6 @@ namespace PassthroughAPP
   GetUnknown(), riid, ppvObject, GetClientServiceProvider()); \
   }
 
-  struct __declspec(uuid("C7A98E66-1010-492c-A1C8-C809E1F75905")) IInternetProtocolEx;
-
   template <class StartPolicy, class ThreadModel = CComMultiThreadModel>
   class ATL_NO_VTABLE CInternetProtocol :
     public CComObjectRootEx<ThreadModel>,
@@ -357,8 +425,6 @@ namespace PassthroughAPP
     {
       IInternetProtocol* pProtocol = ((CInternetProtocol<StartPolicy, ThreadModel> *) pv)->m_spInternetProtocol;
       ATLASSERT(pProtocol != 0);
-      // TODO: don't need this once we support IInternetProtocolEx
-      if (InlineIsEqualGUID(riid, __uuidof(IInternetProtocolEx))) return E_NOINTERFACE;
       return pProtocol ? pProtocol->QueryInterface(riid, ppv) : E_UNEXPECTED;
     }
   public:
@@ -366,6 +432,7 @@ namespace PassthroughAPP
       COM_INTERFACE_ENTRY(IPassthroughObject)
       COM_INTERFACE_ENTRY(IInternetProtocolRoot)
       COM_INTERFACE_ENTRY(IInternetProtocol)
+      COM_INTERFACE_ENTRY(IInternetProtocolEx)
       COM_INTERFACE_ENTRY_PASSTHROUGH(IInternetProtocolInfo,
       m_spInternetProtocolInfo.p)
       COM_INTERFACE_ENTRY_PASSTHROUGH(IInternetPriority,
@@ -375,9 +442,21 @@ namespace PassthroughAPP
       COM_INTERFACE_ENTRY_PASSTHROUGH(IWinInetInfo, m_spWinInetInfo.p)
       COM_INTERFACE_ENTRY_PASSTHROUGH2(IWinInetHttpInfo,
       m_spWinInetHttpInfo.p, IWinInetInfo)
+      COM_INTERFACE_ENTRY_PASSTHROUGH(IWinInetCacheHints,
+			m_spWinInetCacheHints.p)
+		  COM_INTERFACE_ENTRY_PASSTHROUGH2(IWinInetCacheHints2,
+			m_spWinInetCacheHints2.p, IWinInetCacheHints)
       COM_INTERFACE_ENTRY_FUNC_BLIND(0, OnDelegateIID)
       COM_INTERFACE_ENTRY_PASSTHROUGH_DEBUG()
     END_COM_MAP()
+
+    // IInternetProtocolRoot
+	  STDMETHODIMP Start(LPCWSTR szUrl, IInternetProtocolSink *pOIProtSink,
+		  IInternetBindInfo *pOIBindInfo, DWORD grfPI, HANDLE_PTR dwReserved);
+
+	  // IInternetProtocolEx
+	  STDMETHODIMP StartEx(IUri *pUri, IInternetProtocolSink *pOIProtSink,
+  		IInternetBindInfo *pOIBindInfo, DWORD grfPI, HANDLE_PTR dwReserved);
   };
 
 } // end namespace PassthroughAPP

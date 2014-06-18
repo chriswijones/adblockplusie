@@ -10,11 +10,16 @@
 #pragma comment(linker,"\"/manifestdependency:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
 
 
-//#define STRICT
-#define WINVER 0x0501
 
+
+//#define STRICT
+#define WINVER 0x0502 //XP SP2
+
+
+// To get _WIN32_IE >= _WIN32_IE_IE70
+// we need to define _WIN32_WINNT as vista 0x600 or above
 #ifndef _WIN32_WINNT
-#define _WIN32_WINNT 0x0501
+#define _WIN32_WINNT 0x0600
 #endif
 
 #define _ATL_APARTMENT_THREADED

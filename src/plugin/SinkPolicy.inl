@@ -24,6 +24,15 @@ inline HRESULT NoSinkStartPolicy::OnStart(LPCWSTR szUrl,
 		grfPI, dwReserved);
 }
 
+inline HRESULT NoSinkStartPolicy::OnStartEx(IUri* pUri,
+	IInternetProtocolSink *pOIProtSink, IInternetBindInfo *pOIBindInfo,
+	DWORD grfPI, HANDLE_PTR dwReserved,
+	IInternetProtocolEx* pTargetProtocol) const
+{
+	ATLASSERT(pTargetProtocol != 0);
+	return pTargetProtocol->StartEx(pUri, pOIProtSink, pOIBindInfo,
+		grfPI, dwReserved);
+}
 
 // ===== CComObjectSharedRef =====
 
@@ -388,6 +397,39 @@ inline HRESULT CustomSinkStartPolicy<Protocol, Sink>::OnStart(LPCWSTR szUrl,
 	return hr;
 }
 
+template <class Protocol, class Sink>
+inline HRESULT CustomSinkStartPolicy<Protocol, Sink>::OnStartEx(IUri* pUri,
+	IInternetProtocolSink *pOIProtSink, IInternetBindInfo *pOIBindInfo,
+	DWORD grfPI, HANDLE_PTR dwReserved,
+	IInternetProtocolEx* pTargetProtocol) const
+{
+	ATLASSERT(pTargetProtocol != 0);
+
+	Sink* pSink = GetSink(static_cast<const Protocol*>(this));
+	HRESULT hr = pSink->OnStartEx(pUri, pOIProtSink, pOIBindInfo, grfPI,
+		dwReserved, pTargetProtocol);
+
+	CComPtr<IInternetProtocolSink> spSink;
+	CComPtr<IInternetBindInfo> spBindInfo;
+	if (SUCCEEDED(hr))
+	{
+		hr = pSink->QueryInterface(IID_IInternetProtocolSink,
+			reinterpret_cast<void**>(&spSink));
+		ATLASSERT(SUCCEEDED(hr) && spSink != 0);
+	}
+	if (SUCCEEDED(hr))
+	{
+		hr = pSink->QueryInterface(IID_IInternetBindInfo,
+			reinterpret_cast<void**>(&spBindInfo));
+		ATLASSERT(SUCCEEDED(hr) && spBindInfo != 0);
+	}
+	if (SUCCEEDED(hr))
+	{
+		hr = pTargetProtocol->StartEx(pUri, spSink, spBindInfo, grfPI,
+			dwReserved);
+	}
+	return hr;
+}
 
 template <class Protocol, class Sink>
 inline Sink* CustomSinkStartPolicy<Protocol, Sink>::GetSink(

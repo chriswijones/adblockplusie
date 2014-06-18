@@ -2,6 +2,7 @@
 
 #include "ProtocolCF.h"
 #include "ProtocolImpl.h"
+#include <functional>
 #define IE_MAX_URL_LENGTH 2048
 
 class WBPassthruSink :
@@ -45,14 +46,21 @@ public:
 	HRESULT OnStart(LPCWSTR szUrl, IInternetProtocolSink *pOIProtSink,
 		IInternetBindInfo *pOIBindInfo, DWORD grfPI, HANDLE_PTR dwReserved,
 		IInternetProtocol* pTargetProtocol);
-	HRESULT Read(void *pv, ULONG cb, ULONG* pcbRead);
+  HRESULT OnStartEx(IUri* pUri, IInternetProtocolSink *pOIProtSink,
+    IInternetBindInfo *pOIBindInfo,	DWORD grfPI, HANDLE_PTR dwReserved,
+    IInternetProtocolEx* pTargetProtocol);
+  HRESULT _OnStart(LPCWSTR szUrl, IInternetProtocolSink *pOIProtSink,
+                  IInternetBindInfo *pOIBindInfo,	DWORD grfPI, HANDLE_PTR dwReserved,
+                  std::function<HRESULT ()> baseOnStart);
 
-	STDMETHODIMP ReportProgress(
-		/* [in] */ ULONG ulStatusCode,
-		/* [in] */ LPCWSTR szStatusText);
+  HRESULT Read(void *pv, ULONG cb, ULONG* pcbRead);
 
-	STDMETHODIMP Switch(
-		/* [in] */ PROTOCOLDATA *pProtocolData);
+  STDMETHODIMP ReportProgress(
+    /* [in] */ ULONG ulStatusCode,
+    /* [in] */ LPCWSTR szStatusText);
+
+  STDMETHODIMP Switch(
+    /* [in] */ PROTOCOLDATA *pProtocolData);
 };
 
 class WBPassthru;
@@ -61,10 +69,6 @@ typedef PassthroughAPP::CustomSinkStartPolicy<WBPassthru, WBPassthruSink> WBStar
 class WBPassthru : public PassthroughAPP::CInternetProtocol<WBStartPolicy>
 {
 public:
-  // IInternetProtocolRoot
-  STDMETHODIMP Start(LPCWSTR szUrl, IInternetProtocolSink *pOIProtSink,
-    IInternetBindInfo *pOIBindInfo, DWORD grfPI, HANDLE_PTR dwReserved);
-
   //IInternetProtocol
   STDMETHODIMP Read(	/* [in, out] */ void *pv,/* [in] */ ULONG cb,/* [out] */ ULONG *pcbRead);
 };

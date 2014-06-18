@@ -19,6 +19,9 @@ public:
 		IInternetBindInfo *pOIBindInfo, DWORD grfPI, HANDLE_PTR dwReserved,
 		IInternetProtocol* pTargetProtocol) const;
 
+  HRESULT OnStartEx(IUri *pUri, IInternetProtocolSink *pOIProtSink,
+    IInternetBindInfo *pOIBindInfo, DWORD grfPI, HANDLE_PTR dwReserved,
+    IInternetProtocolEx* pTargetProtocol) const;
 };
 
 template <class Base>
@@ -157,6 +160,10 @@ public:
 		DWORD grfPI, HANDLE_PTR dwReserved,
 		IInternetProtocol* pTargetProtocol) const;
 
+  HRESULT OnStartEx(IUri* pUri,
+    IInternetProtocolSink *pOIProtSink, IInternetBindInfo *pOIBindInfo,
+    DWORD grfPI, HANDLE_PTR dwReserved,
+    IInternetProtocolEx* pTargetProtocol) const;
 
 	static Sink* GetSink(const Protocol* pProtocol);
 	Sink* GetSink() const;
