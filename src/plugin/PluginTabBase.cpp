@@ -26,7 +26,10 @@ int CPluginTabBase::s_configVersion = 0;
 #endif
 
 
-CPluginTabBase::CPluginTabBase(CPluginClass* plugin) : m_plugin(plugin), m_isActivated(false)
+CPluginTabBase::CPluginTabBase(CPluginClass* plugin)
+  : m_plugin(plugin)
+  , m_isActivated(false)
+  , m_continueThreadRunning(true)
 {
   m_filter = std::auto_ptr<CPluginFilter>(new CPluginFilter());
   m_filter->hideFiltersLoadedEvent = CreateEvent(NULL, true, false, NULL);
@@ -37,16 +40,15 @@ CPluginTabBase::CPluginTabBase(CPluginClass* plugin) : m_plugin(plugin), m_isAct
     m_isActivated = true;
   }
 
-  DWORD id;
-  m_hThread = ::CreateThread(NULL, 0, ThreadProc, (LPVOID)this, CREATE_SUSPENDED, &id);
-  if (m_hThread)
+  try
   {
-    m_isThreadDone = false;
-    ::ResumeThread(m_hThread);
+    m_thread = std::thread(&CPluginTabBase::ThreadProc, this);
   }
-  else
+  catch (const std::system_error& ex)
   {
-    DEBUG_ERROR_LOG(::GetLastError(), PLUGIN_ERROR_THREAD, PLUGIN_ERROR_TAB_THREAD_CREATE_PROCESS, "Tab::Thread - Failed to create tab thread");
+    auto errDescription = std::string("Tab::Thread - Failed to create tab thread") +
+                ex.code().message() + ex.what();
+    DEBUG_ERROR_LOG(ex.code().value(), PLUGIN_ERROR_THREAD, PLUGIN_ERROR_TAB_THREAD_CREATE_PROCESS, errDescription.c_str());
   }
 
 #ifdef SUPPORT_DOM_TRAVERSER
@@ -62,13 +64,9 @@ CPluginTabBase::~CPluginTabBase()
   m_traverser = NULL;
 #endif // SUPPORT_DOM_TRAVERSER
 
-  // Close down thread
-  if (m_hThread != NULL)
-  {
-    m_isThreadDone = true;
-
-    ::WaitForSingleObject(m_hThread, INFINITE);
-    ::CloseHandle(m_hThread);
+  m_continueThreadRunning = false;
+  if (m_thread.joinable()) {
+    m_thread.join();
   }
 }
 
@@ -83,12 +81,13 @@ void CPluginTabBase::OnUpdate()
   m_isActivated = true;
 }
 
-DWORD WINAPI FilterLoader(LPVOID threadParam)
+namespace
 {
-  CPluginTabBase* tabBase = (CPluginTabBase*)threadParam;
-  tabBase->m_filter->LoadHideFilters(CPluginClient::GetInstance()->GetElementHidingSelectors(tabBase->GetDocumentDomain().GetString()));
-  SetEvent(tabBase->m_filter->hideFiltersLoadedEvent);
-  return 0;
+  void FilterLoader(CPluginTabBase* tabBase)
+  {
+    tabBase->m_filter->LoadHideFilters(CPluginClient::GetInstance()->GetElementHidingSelectors(tabBase->GetDocumentDomain().GetString()));
+    SetEvent(tabBase->m_filter->hideFiltersLoadedEvent);
+  }
 }
 
 void CPluginTabBase::OnNavigate(const CString& url)
@@ -102,7 +101,17 @@ void CPluginTabBase::OnNavigate(const CString& url)
 
   std::wstring domainString = GetDocumentDomain();
   ResetEvent(m_filter->hideFiltersLoadedEvent);
-  CreateThread(NULL, NULL, &FilterLoader, this, NULL, NULL);
+  try
+  {
+    std::thread filterLoaderThread(&FilterLoader, this);
+    filterLoaderThread.detach(); // TODO: but actually we should wait for the thread in the dtr.
+  }
+  catch (const std::system_error& ex)
+  {
+    auto errDescription = std::string("Class::Thread - Failed to start filter loader thread, ") +
+      ex.code().message() + ex.what();
+    DEBUG_ERROR_LOG(ex.code().value(), PLUGIN_ERROR_THREAD, PLUGIN_ERROR_MAIN_THREAD_CREATE_PROCESS, errDescription.c_str());
+  }
 
 #ifdef SUPPORT_DOM_TRAVERSER
   m_traverser->ClearCache();
@@ -315,10 +324,8 @@ void CPluginTabBase::ClearFrameCache(const CString& domain)
 #endif // SUPPORT_FRAME_CACHING
 
 
-DWORD WINAPI CPluginTabBase::ThreadProc(LPVOID pParam)
+void CPluginTabBase::ThreadProc()
 {
-  CPluginTab* tab = static_cast<CPluginTab*>(pParam);
-
   // Force loading/creation of settings
   CPluginSettings* settings = CPluginSettings::GetInstance();
 
@@ -342,7 +349,7 @@ DWORD WINAPI CPluginTabBase::ThreadProc(LPVOID pParam)
   DWORD loopCount = 0;
   DWORD tabLoopIteration = 1;
 
-  while (!tab->m_isThreadDone)
+  while (this->m_continueThreadRunning)
   {
 #ifdef ENABLE_DEBUG_THREAD
     CStringA sTabLoopIteration;
@@ -352,16 +359,16 @@ DWORD WINAPI CPluginTabBase::ThreadProc(LPVOID pParam)
       DEBUG_THREAD("Loop iteration " + sTabLoopIteration);
     DEBUG_THREAD("--------------------------------------------------------------------------------")
 #endif
-      if (tab->m_isActivated)
+      if (this->m_isActivated)
       {
         bool isChanged = false;
 
         if (isChanged)
         {
-          tab->m_plugin->UpdateStatusBar();
+          this->m_plugin->UpdateStatusBar();
         }
 
-        tab->m_isActivated = false;
+        this->m_isActivated = false;
       }
 
       // --------------------------------------------------------------------
@@ -369,7 +376,7 @@ DWORD WINAPI CPluginTabBase::ThreadProc(LPVOID pParam)
       // --------------------------------------------------------------------
 
       // Sleep loop
-      while (!tab->m_isThreadDone && !tab->m_isActivated && (++loopCount % (TIMER_THREAD_SLEEP_TAB_LOOP / 50)) != 0)
+      while (this->m_continueThreadRunning && !this->m_isActivated && (++loopCount % (TIMER_THREAD_SLEEP_TAB_LOOP / 50)) != 0)
       {
         // Post async plugin error
         CPluginError pluginError;
@@ -384,6 +391,4 @@ DWORD WINAPI CPluginTabBase::ThreadProc(LPVOID pParam)
 
       tabLoopIteration++;
   }
-
-  return 0;
 }

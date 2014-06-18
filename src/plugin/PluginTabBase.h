@@ -9,6 +9,8 @@ class CPluginDomTraverser;
 #include "PluginUserSettings.h"
 #include "PluginFilter.h"
 #include "../shared/CriticalSection.h"
+#include <thread>
+#include <atomic>
 
 class CPluginClass;
 
@@ -31,8 +33,8 @@ public:
 protected:
   bool m_isActivated;
 
-  HANDLE m_hThread;
-  bool m_isThreadDone;
+  std::thread m_thread;
+  std::atomic<bool> m_continueThreadRunning;
 
 #ifdef SUPPORT_DOM_TRAVERSER
   CPluginDomTraverser* m_traverser;
@@ -53,7 +55,7 @@ private:
   static int s_configVersion;
 #endif
 
-  static DWORD WINAPI ThreadProc(LPVOID pParam);
+  void ThreadProc();
 
 #ifdef SUPPORT_FRAME_CACHING
   CComAutoCriticalSection m_criticalSectionCache;
